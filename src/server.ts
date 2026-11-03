@@ -1,3 +1,4 @@
+import os from "node:os";
 import express, { type Request, type Response } from "express";
 import { getLlama, LlamaChatSession, resolveModelFile, type LlamaGrammar } from "node-llama-cpp";
 
@@ -10,6 +11,10 @@ const CONTEXT_SIZE = Number(process.env.CONTEXT_SIZE ?? 512);
 const MAX_QUEUE = Number(process.env.MAX_QUEUE ?? 50);
 // true = output model dikunci ke salah satu opsi ("a) ...", "b) ...", dst.), jadi jawaban tidak pernah null
 const USE_GRAMMAR = (process.env.USE_GRAMMAR ?? "true").toLowerCase() !== "false";
+// Jumlah thread CPU. Default = jumlah vCPU. Jangan lebih dari jumlah vCPU (justru melambat).
+const THREADS = Number(process.env.THREADS ?? os.availableParallelism());
+// "letter" (cepat) = model hanya menulis 1 huruf; "full" = model menulis "huruf) teks" lengkap
+const ANSWER_MODE = (process.env.ANSWER_MODE ?? "letter").toLowerCase() === "full" ? "full" : "letter";
 const MAX_QUESTION_CHARS = 2000;
 // Kalimat pembuka system prompt saat request membawa kunci jawaban
 const ANSWER_KEY_INSTRUCTION = "Jawab pertanyaan berikut dengan kunci jawaban yang diberikan,";
@@ -26,11 +31,11 @@ interface AskBody {
 // ===================== Load model (sekali saat start) =====================
 console.log(`[init] memuat model ${MODEL_URI} ...`);
 const modelPath = await resolveModelFile(MODEL_URI, MODELS_DIR); // unduh jika belum ada
-const llama = await getLlama();
+const llama = await getLlama({ maxThreads: THREADS });
 const model = await llama.loadModel({ modelPath });
-const context = await model.createContext({ contextSize: CONTEXT_SIZE });
+const context = await model.createContext({ contextSize: CONTEXT_SIZE, threads: THREADS });
 const session = new LlamaChatSession({ contextSequence: context.getSequence() });
-console.log(`[init] model siap: ${modelPath}`);
+console.log(`[init] model siap: ${modelPath} | threads: ${THREADS} | mode: ${ANSWER_MODE}`);
 
 // ===================== Antrean (1 session = 1 request pada satu waktu) =====================
 let queue: Promise<unknown> = Promise.resolve();
@@ -98,11 +103,14 @@ function escapeGbnf(s: string): string {
 }
 
 /**
- * Grammar GBNF yang hanya mengizinkan salah satu opsi, persis "huruf) teks".
- * Model tetap memilih sendiri opsinya, tapi tidak bisa menulis hal lain.
+ * Grammar GBNF yang mengunci output ke salah satu opsi.
+ * - mode "letter": hanya huruf, mis. "c". Model cukup menulis 1 token, jadi jauh lebih cepat.
+ * - mode "full"  : persis "huruf) teks", mis. "c) Mitosis".
+ * Di kedua mode, pilihan model ditentukan di token pertama (hurufnya), jadi jawabannya praktis sama.
  */
 function buildGrammar(options: Options): Promise<LlamaGrammar> {
-  const alts = Object.entries(options).map(([k, v]) => `"${escapeGbnf(`${k}) ${v}`)}"`);
+  const alts = Object.entries(options).map(([k, v]) =>
+    `"${escapeGbnf(ANSWER_MODE === "letter" ? k : `${k}) ${v}`)}"`);
   return llama.createGrammar({ grammar: `root ::= ${alts.join(" | ")}` });
 }
 
@@ -193,6 +201,15 @@ app.post("/ask", async (req: Request<{}, {}, AskBody>, res: Response) => {
     res.status(500).json({ error: "Gagal memproses pertanyaan." });
   }
 });
+
+// Pemanasan: request pertama selalu lambat, jadi "dipanaskan" sebelum server menerima request
+{
+  const t0 = performance.now();
+  const warmOptions: Options = { a: "Paris", b: "London", c: "Rome", d: "Berlin" };
+  await generate(buildPrompt("What is the capital of France?", warmOptions),
+    USE_GRAMMAR ? await buildGrammar(warmOptions) : undefined);
+  console.log(`[init] pemanasan selesai dalam ${Math.round(performance.now() - t0)} ms`);
+}
 
 const server = app.listen(PORT, () => console.log(`[http] siap di http://localhost:${PORT}`));
 

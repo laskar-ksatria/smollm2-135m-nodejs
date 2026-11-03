@@ -1,24 +1,40 @@
-# Granite 4.0 H 350M API Service
+# LFM2-350M API Service
 
-Layanan HTTP (Node.js + TypeScript) yang menjalankan **IBM Granite 4.0 H 350M** (format GGUF, Q8_0) di **CPU** untuk menjawab soal pilihan ganda. Service lain mengirim `question` dan `options` (opsional `answer_key`), lalu menerima huruf jawabannya.
+Layanan HTTP (Node.js + TypeScript) yang menjalankan **Liquid AI LFM2-350M** (format GGUF, Q8_0) di **CPU** untuk menjawab soal pilihan ganda. Service lain mengirim `question` dan `options` (opsional `answer_key`), lalu menerima huruf jawabannya.
 
 > **Analogi:** Layanan ini seperti dapur restoran. Model adalah koki yang tinggal di dapur (server). Aplikasi lain adalah pelanggan yang memesan lewat pelayan (HTTP API), lalu jawabannya diantar kembali.
 
 ```
-Aplikasi / service lain ──POST /ask──> Granite API (node-llama-cpp + GGUF) ──> { "answer": "c" }
+Aplikasi / service lain ──POST /ask──> LFM2 API (node-llama-cpp + GGUF) ──> { "answer": "c" }
 ```
 
 | | |
 |---|---|
-| Model | `ibm-granite/granite-4.0-h-350m`, GGUF resmi dari IBM: `ibm-granite/granite-4.0-h-350m-GGUF` |
-| File | `granite-4.0-h-350m-Q8_0.gguf`, 366 MB (alternatif `Q4_K_M`, 223 MB) |
-| Lisensi | **Apache 2.0**, bebas dipakai komersial, tidak gated |
-| Arsitektur | Hybrid: 28 lapis Mamba2 + 4 lapis attention, sekitar 340 juta parameter |
-| Runtime | Node.js 20+ dengan node-llama-cpp 3.22+ (arsitektur `granitehybrid` sudah didukung) |
+| Model | `LiquidAI/LFM2-350M`, GGUF resmi dari Liquid AI: `LiquidAI/LFM2-350M-GGUF` |
+| File | `LFM2-350M-Q8_0.gguf`, 379 MB (alternatif `Q4_K_M`, 229 MB) |
+| Lisensi | **LFM Open License v1.0**: komersial boleh **selama pendapatan tahunan di bawah USD 10 juta** (lihat di bawah) |
+| Arsitektur | Hybrid: 10 blok konvolusi pendek + 6 blok attention (GQA), sekitar 350 juta parameter |
+| Runtime | Node.js 20+ dengan node-llama-cpp 3.22+ (arsitektur `lfm2` sudah didukung) |
 | Target server | VPS 2 GB RAM, 2 vCPU, tanpa GPU |
 | Port | `3009` |
 
-> **Kenapa hybrid Mamba cocok untuk CPU?** Lapisan attention biasa harus "melihat ulang" seluruh teks sebelumnya setiap kali menulis kata baru. Lapisan Mamba cukup membawa ringkasan pendek, seperti orang yang mencatat poin penting alih-alih membaca ulang seluruh buku. Karena itu memorinya kecil dan kecepatannya stabil.
+> **Kenapa LFM2 cocok untuk CPU?** Sebagian besar lapisannya adalah *konvolusi pendek*, yang hanya memperhatikan beberapa kata di sekitarnya, seperti membaca sambil fokus ke kalimat yang sedang dibaca. Hanya 6 lapis yang memakai attention penuh untuk melihat seluruh teks. Karena itu komputasinya ringan. Liquid AI mengklaim kecepatannya sekitar 2 kali Qwen3 di CPU (klaim pembuat, bukan hasil ukur kita).
+>
+> Model card-nya juga menyebut LFM2-350M **tidak disarankan untuk tugas yang butuh banyak pengetahuan**. Ini cocok kalau tujuan Anda model yang patuh instruksi tapi minim pengetahuan.
+
+### Lisensi: LFM Open License v1.0
+
+| Poin | Isi |
+|---|---|
+| Pemakaian komersial | Boleh, **selama pendapatan tahunan entitas Anda di bawah USD 10 juta** |
+| Di atas USD 10 juta | Pemakaian komersial **tidak termasuk dalam lisensi**. Perlu menghubungi Liquid AI |
+| Non-profit (501(c)(3) atau setara) | Batas pendapatan tidak berlaku, untuk tujuan non-komersial/riset |
+| Fine-tuning / modifikasi | Boleh dan boleh disebarkan. Batas USD 10 juta tetap berlaku untuk hasil turunannya |
+| Saat menyebarkan model | Sertakan salinan lisensi, tandai file yang diubah, pertahankan pemberitahuan hak cipta |
+| Merek dagang | Tidak boleh memakai nama/merek Liquid AI untuk produk Anda |
+| Pelanggaran | Lisensi langsung berakhir, dan semua salinan wajib dihapus |
+
+Layanan ini hanya **menjalankan** model di server Anda, tidak menyebarkannya. Tapi kalau model ikut dimasukkan ke Docker image publik atau diunggah ulang, sertakan file `LICENSE`-nya. Ini rangkuman, bukan nasihat hukum. Untuk pemakaian bisnis, baca [teks lengkapnya](https://huggingface.co/LiquidAI/LFM2-350M/blob/main/LICENSE).
 
 ---
 
@@ -105,7 +121,7 @@ Angka `latency_ms` di atas hanya ilustrasi. Ukur sendiri di VPS Anda.
 ### `GET /health`
 
 ```json
-{ "status": "ok", "model": "granite-4.0-h-350m-q8_0.gguf", "queue": 0 }
+{ "status": "ok", "model": "lfm2-350m-q8_0.gguf", "queue": 0 }
 ```
 
 Server baru menerima koneksi **setelah model dimuat dan pemanasan selesai**. Kalau `/health` sudah menjawab, model sudah siap.
@@ -129,16 +145,16 @@ d) Fertilization
 Answer with the letter (a, b, c, or d).
 ```
 
-### System prompt: berbeda dari SmolLM2 dan Qwen
+### System prompt
 
-Template chat resmi Granite **selalu menambahkan system prompt**. Jika request tidak membawa system prompt, Granite memakai system prompt default-nya sendiri:
+Template chat resmi LFM2 **tidak menambahkan system prompt default**, sama seperti SmolLM2 dan Qwen.
 
 | Request | System prompt yang diterima model |
 |---|---|
-| Tanpa `answer_key` | Default Granite: *"You are a helpful assistant. Please ensure responses are professional, accurate, and safe."* |
+| Tanpa `answer_key` | Tidak ada. Model hanya menerima pertanyaan |
 | Dengan `answer_key` | `Jawab pertanyaan berikut dengan kunci jawaban yang diberikan,`<br>`Kunci jawaban: c) Mitosis` |
 
-Ini perilaku resmi dari IBM dan dibiarkan apa adanya. Saat `answer_key` dikirim, system prompt Anda **menggantikan** default Granite, bukan ditambahkan.
+Model card LFM2 menyarankan `temperature 0.3`. Layanan ini sengaja memakai `temperature 0` dan grammar, supaya jawabannya pasti dan selalu sama untuk soal yang sama.
 
 ### Grammar: jawaban tidak pernah `null`
 
@@ -173,7 +189,7 @@ Output dibaca menjadi huruf dengan urutan aturan berikut. Saat grammar aktif, at
 ## 3. Struktur proyek
 
 ```
-granite-api/
+lfm2-api/
 ├── src/
 │   └── server.ts
 ├── models/              # berisi file .gguf (tidak masuk git)
@@ -200,7 +216,7 @@ models
 Butuh **Node.js 20 atau lebih baru** (disarankan 22).
 
 ```bash
-mkdir granite-api && cd granite-api
+mkdir lfm2-api && cd lfm2-api
 npm init -y
 npm pkg set type=module
 
@@ -214,7 +230,7 @@ Script di `package.json`:
 npm pkg set scripts.dev="tsx watch src/server.ts"
 npm pkg set scripts.build="tsc"
 npm pkg set scripts.start="node --env-file=.env dist/server.js"
-npm pkg set scripts.model:pull="node-llama-cpp pull --dir ./models --filename granite-4.0-h-350m-q8_0.gguf hf:ibm-granite/granite-4.0-h-350m-GGUF/granite-4.0-h-350m-Q8_0.gguf"
+npm pkg set scripts.model:pull="node-llama-cpp pull --dir ./models --filename lfm2-350m-q8_0.gguf hf:LiquidAI/LFM2-350M-GGUF/LFM2-350M-Q8_0.gguf"
 ```
 
 `.env.example` (salin menjadi `.env` dengan `cp .env.example .env`):
@@ -223,7 +239,7 @@ npm pkg set scripts.model:pull="node-llama-cpp pull --dir ./models --filename gr
 PORT=3009
 MODELS_DIR=./models
 # Nama file di MODELS_DIR (offline). Unduh dulu dengan: npm run model:pull
-MODEL_URI=granite-4.0-h-350m-q8_0.gguf
+MODEL_URI=lfm2-350m-q8_0.gguf
 # Jumlah thread = jumlah vCPU VPS. Jangan lebih.
 THREADS=2
 # letter = cepat (1 huruf), full = "huruf) teks"
@@ -263,7 +279,7 @@ import { getLlama, LlamaChatSession, resolveModelFile, type LlamaGrammar } from 
 
 // ===================== Konfigurasi (via environment variable) =====================
 const PORT = Number(process.env.PORT ?? 3009);
-const MODEL_URI = process.env.MODEL_URI ?? "hf:ibm-granite/granite-4.0-h-350m-GGUF/granite-4.0-h-350m-Q8_0.gguf";
+const MODEL_URI = process.env.MODEL_URI ?? "hf:LiquidAI/LFM2-350M-GGUF/LFM2-350M-Q8_0.gguf";
 const MODELS_DIR = process.env.MODELS_DIR ?? "./models";
 const MAX_TOKENS = Number(process.env.MAX_TOKENS ?? 32); // cukup untuk "huruf) teks jawaban"
 const CONTEXT_SIZE = Number(process.env.CONTEXT_SIZE ?? 512);
@@ -490,7 +506,7 @@ process.on("SIGTERM", shutdown);
 ## 6. Menjalankan di lokal
 
 ```bash
-npm run model:pull    # unduh model sekali (366 MB)
+npm run model:pull    # unduh model sekali (379 MB)
 npm run build
 npm start
 ```
@@ -498,7 +514,7 @@ npm start
 Tunggu sampai log menampilkan:
 
 ```
-[init] model siap: .../models/granite-4.0-h-350m-q8_0.gguf | threads: 2 | mode: letter
+[init] model siap: .../models/lfm2-350m-q8_0.gguf | threads: 2 | mode: letter
 [init] pemanasan selesai dalam ... ms
 [http] siap di http://localhost:3009
 ```
@@ -528,10 +544,10 @@ curl http://localhost:3009/health
 **1. Clone dan pasang dependensi**
 
 ```bash
-sudo mkdir -p /opt/granite-api
-sudo chown "$USER":"$USER" /opt/granite-api
-git clone <URL-REPO-ANDA> /opt/granite-api
-cd /opt/granite-api
+sudo mkdir -p /opt/lfm2-api
+sudo chown "$USER":"$USER" /opt/lfm2-api
+git clone <URL-REPO-ANDA> /opt/lfm2-api
+cd /opt/lfm2-api
 npm ci
 ```
 
@@ -541,13 +557,13 @@ npm ci
 
 ```bash
 npm run model:pull
-ls -lh models/    # granite-4.0-h-350m-q8_0.gguf sekitar 366 MB
+ls -lh models/    # lfm2-350m-q8_0.gguf sekitar 379 MB
 ```
 
 Kalau VPS tidak bisa mengakses Hugging Face, unduh di komputer lain lalu salin:
 
 ```bash
-scp models/granite-4.0-h-350m-q8_0.gguf user@IP-VPS:/opt/granite-api/models/
+scp models/lfm2-350m-q8_0.gguf user@IP-VPS:/opt/lfm2-api/models/
 ```
 
 **3. Konfigurasi dan build**
@@ -572,15 +588,15 @@ Pastikan log menampilkan `threads: 2 | mode: letter` dan `pemanasan selesai`. He
 systemd menjalankan server di background, menyalakannya lagi kalau crash, dan otomatis start saat VPS reboot. Perintah di bawah mengisi user dan lokasi `node` secara otomatis:
 
 ```bash
-sudo tee /etc/systemd/system/granite-api.service > /dev/null <<EOF
+sudo tee /etc/systemd/system/lfm2-api.service > /dev/null <<EOF
 [Unit]
-Description=Granite 4.0 H 350M MCQ API
+Description=LFM2-350M MCQ API
 After=network.target
 
 [Service]
 Type=simple
 User=$(whoami)
-WorkingDirectory=/opt/granite-api
+WorkingDirectory=/opt/lfm2-api
 ExecStart=$(command -v node) --env-file=.env dist/server.js
 Restart=always
 RestartSec=5
@@ -591,32 +607,33 @@ WantedBy=multi-user.target
 EOF
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now granite-api
+sudo systemctl enable --now lfm2-api
 ```
 
 Perintah sehari-hari:
 
 ```bash
-systemctl status granite-api          # status
-journalctl -u granite-api -f          # lihat log secara live
-sudo systemctl restart granite-api    # restart (setelah mengubah .env atau kode)
-sudo systemctl stop granite-api       # hentikan
+systemctl status lfm2-api          # status
+journalctl -u lfm2-api -f          # lihat log secara live
+sudo systemctl restart lfm2-api    # restart (setelah mengubah .env atau kode)
+sudo systemctl stop lfm2-api       # hentikan
 ```
 
-**Pindah dari layanan Qwen di port yang sama?** Matikan layanan lama dulu supaya port 3009 tidak bentrok:
+**Pindah dari layanan lain di port yang sama?** Matikan layanan lama dulu supaya port 3009 tidak bentrok:
 
 ```bash
-sudo systemctl disable --now qwen-api
+sudo systemctl disable --now qwen-api      # jika sebelumnya memakai Qwen
+sudo systemctl disable --now granite-api   # jika sebelumnya memakai Granite
 ```
 
 **Update ke versi baru:**
 
 ```bash
-cd /opt/granite-api
+cd /opt/lfm2-api
 git pull
 npm ci
 npm run build
-sudo systemctl restart granite-api
+sudo systemctl restart lfm2-api
 ```
 
 ---
@@ -628,7 +645,7 @@ Semua pengaturan lewat `.env`. Nilai di `.env` selalu mengalahkan default di kod
 | Variabel | Default | Keterangan |
 |---|---|---|
 | `PORT` | `3009` | Port HTTP |
-| `MODEL_URI` | `hf:ibm-granite/granite-4.0-h-350m-GGUF/granite-4.0-h-350m-Q8_0.gguf` | Nama file `.gguf` di `MODELS_DIR` (offline, disarankan) **atau** URI Hugging Face (unduh otomatis) |
+| `MODEL_URI` | `hf:LiquidAI/LFM2-350M-GGUF/LFM2-350M-Q8_0.gguf` | Nama file `.gguf` di `MODELS_DIR` (offline, disarankan) **atau** URI Hugging Face (unduh otomatis) |
 | `MODELS_DIR` | `./models` | Folder file `.gguf` |
 | `THREADS` | jumlah vCPU | Thread CPU. **Jangan lebih dari jumlah vCPU**, karena justru melambat |
 | `ANSWER_MODE` | `letter` | `letter` = model menulis 1 huruf (cepat). `full` = `huruf) teks` |
@@ -637,14 +654,14 @@ Semua pengaturan lewat `.env`. Nilai di `.env` selalu mengalahkan default di kod
 | `CONTEXT_SIZE` | `512` | Ukuran konteks. Cukup untuk satu soal |
 | `MAX_QUEUE` | `50` | Batas antrean. Melebihi ini, server membalas `503` |
 
-**Ganti ke Q4_K_M (223 MB, lebih hemat RAM):**
+**Ganti ke Q4_K_M (229 MB, lebih hemat RAM):**
 
 ```bash
-npx node-llama-cpp pull --dir ./models --filename granite-4.0-h-350m-q4_k_m.gguf hf:ibm-granite/granite-4.0-h-350m-GGUF/granite-4.0-h-350m-Q4_K_M.gguf
+npx node-llama-cpp pull --dir ./models --filename lfm2-350m-q4_k_m.gguf hf:LiquidAI/LFM2-350M-GGUF/LFM2-350M-Q4_K_M.gguf
 ```
 
 ```env
-MODEL_URI=granite-4.0-h-350m-q4_k_m.gguf
+MODEL_URI=lfm2-350m-q4_k_m.gguf
 ```
 
 Model kecil lebih rapuh terhadap kuantisasi 4-bit. Bandingkan dulu hasilnya pada soal yang sama sebelum berpindah.
@@ -675,7 +692,7 @@ async function askMcq(
     body: JSON.stringify({ question, options, ...(answerKey ? { answer_key: answerKey } : {}) }),
     signal: AbortSignal.timeout(30_000),
   });
-  if (!res.ok) throw new Error(`Granite API ${res.status}: ${await res.text()}`);
+  if (!res.ok) throw new Error(`LFM2 API ${res.status}: ${await res.text()}`);
   return res.json() as Promise<AskResponse>;
 }
 
@@ -703,7 +720,7 @@ print(r.json())
 
 ## 10. Performa di VPS 2 GB
 
-**Perkiraan RAM:** file model 366 MB. Total proses diperkirakan di bawah 1 GB, jauh lebih ringan dari Qwen2.5-0.5B (sekitar 1,3 GB). Ini perkiraan, jadi ukur di VPS Anda dengan `systemctl status granite-api` (baris `Memory:`).
+**Perkiraan RAM:** file model 379 MB. Total proses diperkirakan di bawah 1 GB, jauh lebih ringan dari Qwen2.5-0.5B (sekitar 1,3 GB). Ini perkiraan, jadi ukur di VPS Anda dengan `systemctl status lfm2-api` (baris `Memory:`).
 
 Tiga pengaturan yang paling berpengaruh pada kecepatan sudah aktif secara default:
 
@@ -755,7 +772,7 @@ Kalau harus diakses dari internet, letakkan reverse proxy (misalnya nginx) denga
 |---|---|---|
 | `No model file found at ...` | Model belum diunduh, atau nama di `.env` berbeda | `npm run model:pull`, lalu cek `ls models/` dan `MODEL_URI` |
 | `node: .env: not found` | File `.env` belum dibuat | `cp .env.example .env` |
-| `EADDRINUSE` / port 3009 dipakai | Layanan lama (misalnya Qwen) masih jalan | `sudo systemctl disable --now qwen-api` |
+| `EADDRINUSE` / port 3009 dipakai | Layanan lama (Qwen/Granite) masih jalan | `sudo systemctl disable --now qwen-api` atau `granite-api` |
 | Error `unknown model architecture` | node-llama-cpp terlalu lama | `npm i node-llama-cpp@latest`, lalu build ulang |
 | Server menghubungi Hugging Face saat start | `MODEL_URI` masih berbentuk `hf:...` | Pakai nama file, seperti di `.env.example` |
 | Service mati sendiri, log berhenti tiba-tiba | RAM habis | `sudo dmesg \| grep -i -E "killed\|oom"`. Pakai Q4_K_M atau tambah swap |

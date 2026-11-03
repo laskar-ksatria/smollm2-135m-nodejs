@@ -135,6 +135,18 @@ curl -X POST http://localhost:3009/ask \
   -d '{"question":"Who was the first person to walk on the Moon, in 1969?","options":{"a":"Neil Armstrong","b":"John Glenn","c":"Buzz Aldrin","d":"Yuri Gagarin"}}'
 ```
 
+**Kunci jawaban (opsional).** Field `answer_key` memasukkan kunci ke system prompt. Isinya huruf (`"a"`) atau objek seperti field `answer` di dataset (`{"a": "Neil Armstrong"}`). Tanpa field ini, perilaku server sama seperti biasa.
+
+```bash
+curl -X POST http://localhost:3009/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question":"Who was the first person to walk on the Moon, in 1969?","options":{"a":"Neil Armstrong","b":"John Glenn","c":"Buzz Aldrin","d":"Yuri Gagarin"},"answer_key":"a"}'
+```
+
+Respons selalu memuat `answer_key`: huruf kunci yang dipakai, atau `null` jika request dikirim tanpa kunci. Kunci yang bukan salah satu opsi ditolak dengan `400`.
+
+Model tidak selalu mengikuti kunci. Pada uji 1060 soal, jawabannya sama dengan kunci di 97,6% soal.
+
 Ulangi request kedua beberapa kali dan lihat `latency_ms` untuk mengetahui kecepatan sebenarnya di VPS. Request pertama selalu lebih lambat karena pemanasan. Setelah itu hentikan dengan `Ctrl+C`.
 
 ---

@@ -11,6 +11,8 @@ const MAX_QUEUE = Number(process.env.MAX_QUEUE ?? 50);
 // true = output model dikunci ke salah satu opsi ("a) ...", "b) ...", dst.), jadi jawaban tidak pernah null
 const USE_GRAMMAR = (process.env.USE_GRAMMAR ?? "true").toLowerCase() !== "false";
 const MAX_QUESTION_CHARS = 2000;
+// Kalimat pembuka system prompt saat request membawa kunci jawaban
+const ANSWER_KEY_INSTRUCTION = "Jawab pertanyaan berikut dengan kunci jawaban yang diberikan,";
 
 // ===================== Tipe =====================
 type Options = Record<string, string>;
@@ -18,6 +20,7 @@ type Options = Record<string, string>;
 interface AskBody {
   question?: unknown;
   options?: unknown;
+  answer_key?: unknown; // opsional: "c" atau {"c": "Mitosis"}
 }
 
 // ===================== Load model (sekali saat start) =====================
@@ -33,10 +36,11 @@ console.log(`[init] model siap: ${modelPath}`);
 let queue: Promise<unknown> = Promise.resolve();
 let pending = 0;
 
-function generate(prompt: string, grammar?: LlamaGrammar): Promise<string> {
+function generate(prompt: string, grammar?: LlamaGrammar, systemPrompt?: string): Promise<string> {
   pending++;
   const job = queue.then(async () => {
-    session.setChatHistory([]); // reset: tanpa system prompt & tanpa riwayat sebelumnya
+    // reset riwayat; system prompt hanya dipasang jika request membawa kunci jawaban
+    session.setChatHistory(systemPrompt ? [{ type: "system", text: systemPrompt }] : []);
     return session.prompt(prompt, {
       maxTokens: MAX_TOKENS,
       temperature: 0,
@@ -57,6 +61,28 @@ function normalizeOptions(raw: unknown): Options | null {
     .map(([k, v]) => [k.toLowerCase(), (v as string).trim()] as const);
   if (entries.length < 2) return null;
   return Object.fromEntries(entries);
+}
+
+/**
+ * Kunci jawaban opsional: huruf ("c") atau objek {"c": "Mitosis"} (format field `answer` di dataset).
+ * Yang menentukan hanya hurufnya; teks diambil dari options.
+ * Hasil: huruf kunci, undefined jika tidak dikirim, atau null jika tidak valid.
+ */
+function normalizeAnswerKey(raw: unknown, options: Options): string | null | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  let letter: unknown = raw;
+  if (typeof raw === "object" && !Array.isArray(raw)) {
+    const keys = Object.keys(raw);
+    if (keys.length !== 1) return null;
+    letter = keys[0];
+  }
+  if (typeof letter !== "string") return null;
+  const key = letter.trim().toLowerCase();
+  return Object.hasOwn(options, key) ? key : null;
+}
+
+function buildSystemPrompt(answerKey: string, options: Options): string {
+  return `${ANSWER_KEY_INSTRUCTION}\nKunci jawaban: ${answerKey}) ${options[answerKey]}`;
 }
 
 function buildPrompt(question: string, options: Options): string {
@@ -125,7 +151,7 @@ app.get("/health", (_req: Request, res: Response) => {
 });
 
 app.post("/ask", async (req: Request<{}, {}, AskBody>, res: Response) => {
-  const { question, options: rawOptions } = req.body ?? {};
+  const { question, options: rawOptions, answer_key: rawAnswerKey } = req.body ?? {};
 
   if (typeof question !== "string" || !question.trim()) {
     return res.status(400).json({ error: "Field 'question' wajib berupa teks." });
@@ -139,6 +165,12 @@ app.post("/ask", async (req: Request<{}, {}, AskBody>, res: Response) => {
       error: "Field 'options' wajib berisi minimal 2 opsi, contoh: {\"a\": \"...\", \"b\": \"...\"}.",
     });
   }
+  const answerKey = normalizeAnswerKey(rawAnswerKey, options);
+  if (answerKey === null) {
+    return res.status(400).json({
+      error: "Field 'answer_key' harus berupa huruf salah satu opsi, contoh: \"c\" atau {\"c\": \"...\"}.",
+    });
+  }
   if (pending >= MAX_QUEUE) {
     return res.status(503).json({ error: "Server sedang sibuk, coba lagi sebentar." });
   }
@@ -146,11 +178,13 @@ app.post("/ask", async (req: Request<{}, {}, AskBody>, res: Response) => {
   try {
     const t0 = performance.now();
     const grammar = USE_GRAMMAR ? await buildGrammar(options) : undefined;
-    const raw = await generate(buildPrompt(question, options), grammar);
+    const systemPrompt = answerKey ? buildSystemPrompt(answerKey, options) : undefined;
+    const raw = await generate(buildPrompt(question, options), grammar, systemPrompt);
     const answer = parseAnswer(raw, options);
     res.json({
       answer,                                         // "c" atau null jika tidak terbaca
       answer_text: answer ? options[answer] : null,   // "Mitosis"
+      answer_key: answerKey ?? null,                  // kunci yang dipakai di system prompt, null jika tanpa kunci
       raw: raw.trim(),                                // output asli model
       latency_ms: Math.round(performance.now() - t0),
     });

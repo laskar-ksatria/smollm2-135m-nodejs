@@ -1,1 +1,20 @@
+# Data uji
 questions.jsonl
+
+# Dependensi & hasil build (dibuat ulang dengan `npm ci` dan `npm run build`)
+node_modules/
+dist/
+
+# Model GGUF, ratusan MB (unduh di server dengan `npm run model:pull`)
+models/
+*.gguf
+
+# Konfigurasi lokal (salin dari .env.example)
+.env
+.env.*
+!.env.example
+
+# Log & file sistem
+*.log
+npm-debug.log*
+.DS_Store

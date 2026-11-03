@@ -4,7 +4,7 @@ import { getLlama, LlamaChatSession, resolveModelFile, type LlamaGrammar } from 
 
 // ===================== Konfigurasi (via environment variable) =====================
 const PORT = Number(process.env.PORT ?? 3009);
-const MODEL_URI = process.env.MODEL_URI ?? "hf:Qwen/Qwen2.5-0.5B-Instruct-GGUF/qwen2.5-0.5b-instruct-q8_0.gguf";
+const MODEL_URI = process.env.MODEL_URI ?? "hf:ibm-granite/granite-4.0-h-350m-GGUF/granite-4.0-h-350m-Q8_0.gguf";
 const MODELS_DIR = process.env.MODELS_DIR ?? "./models";
 const MAX_TOKENS = Number(process.env.MAX_TOKENS ?? 32); // cukup untuk "huruf) teks jawaban"
 const CONTEXT_SIZE = Number(process.env.CONTEXT_SIZE ?? 512);

@@ -1,14 +1,13 @@
 {
-  "name": "qwen2.5-0.5b-api",
+  "name": "granite-api",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node --env-file=.env dist/server.js",
-    "model:pull": "node-llama-cpp pull --dir ./models --filename qwen2.5-0.5b-instruct-q8_0.gguf hf:Qwen/Qwen2.5-0.5B-Instruct-GGUF/qwen2.5-0.5b-instruct-q8_0.gguf"
+    "model:pull": "node-llama-cpp pull --dir ./models --filename granite-4.0-h-350m-q8_0.gguf hf:ibm-granite/granite-4.0-h-350m-GGUF/granite-4.0-h-350m-Q8_0.gguf"
   },
   "repository": {
     "type": "git",

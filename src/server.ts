@@ -1,4 +1,5 @@
 import os from "node:os";
+import { randomInt } from "node:crypto";
 import express, { type Request, type Response } from "express";
 import { getLlama, LlamaChatSession, resolveModelFile, type LlamaGrammar } from "node-llama-cpp";
 
@@ -15,6 +16,8 @@ const USE_GRAMMAR = (process.env.USE_GRAMMAR ?? "true").toLowerCase() !== "false
 const THREADS = Number(process.env.THREADS ?? os.availableParallelism());
 // "letter" (cepat) = model hanya menulis 1 huruf; "full" = model menulis "huruf) teks" lengkap
 const ANSWER_MODE = (process.env.ANSWER_MODE ?? "letter").toLowerCase() === "full" ? "full" : "letter";
+// 0 = soal yang sama selalu dapat jawaban yang sama. > 0 = jawaban bisa berbeda tiap request (makin tinggi makin acak)
+const TEMPERATURE = Math.max(0, Number(process.env.TEMPERATURE ?? 0) || 0);
 const MAX_QUESTION_CHARS = 2000;
 // Kalimat pembuka system prompt saat request membawa kunci jawaban
 const ANSWER_KEY_INSTRUCTION = "Jawab pertanyaan berikut dengan kunci jawaban yang diberikan,";
@@ -35,7 +38,7 @@ const llama = await getLlama({ maxThreads: THREADS });
 const model = await llama.loadModel({ modelPath });
 const context = await model.createContext({ contextSize: CONTEXT_SIZE, threads: THREADS });
 const session = new LlamaChatSession({ contextSequence: context.getSequence() });
-console.log(`[init] model siap: ${modelPath} | threads: ${THREADS} | mode: ${ANSWER_MODE}`);
+console.log(`[init] model siap: ${modelPath} | threads: ${THREADS} | mode: ${ANSWER_MODE} | temperature: ${TEMPERATURE}`);
 
 // ===================== Antrean (1 session = 1 request pada satu waktu) =====================
 let queue: Promise<unknown> = Promise.resolve();
@@ -48,7 +51,10 @@ function generate(prompt: string, grammar?: LlamaGrammar, systemPrompt?: string)
     session.setChatHistory(systemPrompt ? [{ type: "system", text: systemPrompt }] : []);
     return session.prompt(prompt, {
       maxTokens: MAX_TOKENS,
-      temperature: 0,
+      temperature: TEMPERATURE,
+      // Seed acak per request. Default node-llama-cpp memakai waktu dalam detik, sehingga
+      // request di detik yang sama mendapat "acak" yang sama (jawaban kembali seragam).
+      ...(TEMPERATURE > 0 ? { seed: randomInt(2 ** 31) } : {}),
       ...(grammar ? { grammar } : {}),
     });
   });

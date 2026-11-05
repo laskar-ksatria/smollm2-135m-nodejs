@@ -1,10 +1,11 @@
 import os from "node:os";
+import { randomInt } from "node:crypto";
 import express, { type Request, type Response } from "express";
 import { getLlama, LlamaChatSession, resolveModelFile, type LlamaGrammar } from "node-llama-cpp";
 
 // ===================== Konfigurasi (via environment variable) =====================
 const PORT = Number(process.env.PORT ?? 3009);
-const MODEL_URI = process.env.MODEL_URI ?? "hf:Qwen/Qwen2.5-0.5B-Instruct-GGUF/qwen2.5-0.5b-instruct-q8_0.gguf";
+const MODEL_URI = process.env.MODEL_URI ?? "hf:LiquidAI/LFM2-350M-GGUF/LFM2-350M-Q8_0.gguf";
 const MODELS_DIR = process.env.MODELS_DIR ?? "./models";
 const MAX_TOKENS = Number(process.env.MAX_TOKENS ?? 32); // cukup untuk "huruf) teks jawaban"
 const CONTEXT_SIZE = Number(process.env.CONTEXT_SIZE ?? 512);
@@ -15,6 +16,10 @@ const USE_GRAMMAR = (process.env.USE_GRAMMAR ?? "true").toLowerCase() !== "false
 const THREADS = Number(process.env.THREADS ?? os.availableParallelism());
 // "letter" (cepat) = model hanya menulis 1 huruf; "full" = model menulis "huruf) teks" lengkap
 const ANSWER_MODE = (process.env.ANSWER_MODE ?? "letter").toLowerCase() === "full" ? "full" : "letter";
+// 0 = soal yang sama selalu dapat jawaban yang sama. > 0 = jawaban bisa berbeda tiap request (makin tinggi makin acak)
+// TEMPERATURE dipakai saat request TANPA kunci jawaban, ANSWER_KEY_TEMPERATURE saat request DENGAN kunci jawaban
+const TEMPERATURE = Math.max(0, Number(process.env.TEMPERATURE ?? 2) || 0);
+const ANSWER_KEY_TEMPERATURE = Math.max(0, Number(process.env.ANSWER_KEY_TEMPERATURE ?? 0) || 0);
 const MAX_QUESTION_CHARS = 2000;
 // Kalimat pembuka system prompt saat request membawa kunci jawaban
 const ANSWER_KEY_INSTRUCTION = "Jawab pertanyaan berikut dengan kunci jawaban yang diberikan,";
@@ -35,20 +40,23 @@ const llama = await getLlama({ maxThreads: THREADS });
 const model = await llama.loadModel({ modelPath });
 const context = await model.createContext({ contextSize: CONTEXT_SIZE, threads: THREADS });
 const session = new LlamaChatSession({ contextSequence: context.getSequence() });
-console.log(`[init] model siap: ${modelPath} | threads: ${THREADS} | mode: ${ANSWER_MODE}`);
+console.log(`[init] model siap: ${modelPath} | threads: ${THREADS} | mode: ${ANSWER_MODE} | temperature: ${TEMPERATURE} (dengan kunci: ${ANSWER_KEY_TEMPERATURE})`);
 
 // ===================== Antrean (1 session = 1 request pada satu waktu) =====================
 let queue: Promise<unknown> = Promise.resolve();
 let pending = 0;
 
-function generate(prompt: string, grammar?: LlamaGrammar, systemPrompt?: string): Promise<string> {
+function generate(prompt: string, temperature: number, grammar?: LlamaGrammar, systemPrompt?: string): Promise<string> {
   pending++;
   const job = queue.then(async () => {
     // reset riwayat; system prompt hanya dipasang jika request membawa kunci jawaban
     session.setChatHistory(systemPrompt ? [{ type: "system", text: systemPrompt }] : []);
     return session.prompt(prompt, {
       maxTokens: MAX_TOKENS,
-      temperature: 0,
+      temperature,
+      // Seed acak per request. Default node-llama-cpp memakai waktu dalam detik, sehingga
+      // request di detik yang sama mendapat "acak" yang sama (jawaban kembali seragam).
+      ...(temperature > 0 ? { seed: randomInt(2 ** 31) } : {}),
       ...(grammar ? { grammar } : {}),
     });
   });
@@ -187,7 +195,9 @@ app.post("/ask", async (req: Request<{}, {}, AskBody>, res: Response) => {
     const t0 = performance.now();
     const grammar = USE_GRAMMAR ? await buildGrammar(options) : undefined;
     const systemPrompt = answerKey ? buildSystemPrompt(answerKey, options) : undefined;
-    const raw = await generate(buildPrompt(question, options), grammar, systemPrompt);
+    // Ada kunci jawaban: temperature 0 (ikut kunci, konsisten). Tanpa kunci: TEMPERATURE (jawaban bervariasi)
+    const temperature = answerKey ? ANSWER_KEY_TEMPERATURE : TEMPERATURE;
+    const raw = await generate(buildPrompt(question, options), temperature, grammar, systemPrompt);
     const answer = parseAnswer(raw, options);
     res.json({
       answer,                                         // "c" atau null jika tidak terbaca
@@ -206,7 +216,7 @@ app.post("/ask", async (req: Request<{}, {}, AskBody>, res: Response) => {
 {
   const t0 = performance.now();
   const warmOptions: Options = { a: "Paris", b: "London", c: "Rome", d: "Berlin" };
-  await generate(buildPrompt("What is the capital of France?", warmOptions),
+  await generate(buildPrompt("What is the capital of France?", warmOptions), TEMPERATURE,
     USE_GRAMMAR ? await buildGrammar(warmOptions) : undefined);
   console.log(`[init] pemanasan selesai dalam ${Math.round(performance.now() - t0)} ms`);
 }

@@ -7,7 +7,8 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node --env-file=.env dist/server.js",
-    "model:pull": "node-llama-cpp pull --dir ./models --filename lfm2-350m-q8_0.gguf hf:LiquidAI/LFM2-350M-GGUF/LFM2-350M-Q8_0.gguf"
+    "model:pull": "node-llama-cpp pull --dir ./models --filename lfm2-350m-q8_0.gguf hf:LiquidAI/LFM2-350M-GGUF/LFM2-350M-Q8_0.gguf",
+    "test": "node test/temperature.mjs"
   },
   "repository": {
     "type": "git",

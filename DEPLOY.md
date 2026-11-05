@@ -148,7 +148,8 @@ nano .env
 | `THREADS` | `2` | **Sama dengan jumlah vCPU** (`nproc`). Jangan lebih, karena justru melambat |
 | `ANSWER_MODE` | `letter` | `letter` = model menulis 1 huruf (cepat). `full` = `huruf) teks` |
 | `USE_GRAMMAR` | `true` | Jawaban selalu salah satu opsi, tidak pernah `null` |
-| `TEMPERATURE` | `2` | `0` = soal yang sama selalu dapat jawaban yang sama. Lebih dari `0` = jawaban bisa berbeda tiap request; makin tinggi makin acak. Default di kode `0` jika tidak diisi |
+| `TEMPERATURE` | `2` | Dipakai saat request **tanpa** `answer_key`. `0` = soal yang sama selalu dapat jawaban yang sama. Lebih dari `0` = jawaban bisa berbeda tiap request; makin tinggi makin acak. Default di kode `2` jika tidak diisi |
+| `ANSWER_KEY_TEMPERATURE` | `0` | Dipakai saat request **dengan** `answer_key`. `0` = jawaban selalu konsisten mengikuti kunci. Default di kode `0` jika tidak diisi |
 | `MAX_TOKENS` | `32` | Panjang maksimal jawaban |
 
 `.env` tidak masuk repo (ada di `.gitignore`), jadi file ini dibuat langsung di VPS. Setelah mengubah `.env`, cukup restart. Tidak perlu build ulang.
